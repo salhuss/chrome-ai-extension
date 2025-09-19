@@ -1,0 +1,87 @@
+const messages = document.getElementById("messages");
+const ask = document.getElementById("ask");
+const sendBtn = document.getElementById("send");
+
+let activeTabId = null;
+
+// Receive context-menu selection routed via background → runtime
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.type === "SIDE_PANEL_QUESTION") {
+    activeTabId = msg.sourceTabId ?? activeTabId;
+    const sel = msg.selection?.selection || "";
+    if (sel) {
+      ask.value = `Explain this:\n\n${sel}`;
+    }
+  }
+});
+
+async function getActiveTabId() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tab?.id ?? null;
+}
+
+async function getPageText() {
+  const tabId = activeTabId ?? (await getActiveTabId());
+  if (!tabId) return "";
+  return new Promise((resolve) => {
+    chrome.tabs.sendMessage(tabId, { type: "GET_PAGE_TEXT" }, (res) => resolve(res?.text || ""));
+  });
+}
+
+function addMsg(role, text) {
+  const div = document.createElement("div");
+  div.className = "msg " + role;
+  div.innerHTML = role === "you" ? `<div class="you">${text}</div>` : `<div class="ai">${text}</div>`;
+  messages.appendChild(div);
+  messages.scrollTop = messages.scrollHeight;
+}
+
+async function loadSettings() {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get({ apiBase: "", model: "gpt-4o-mini", contextChars: 20000 }, resolve);
+  });
+}
+
+async function callAI({ apiBase, model, prompt, context }) {
+  // PRO TIP: Point apiBase to YOUR backend (Cloudflare Worker / Vercel / FastAPI)
+  // that calls your provider with the API key securely on the server.
+  const body = {
+    model, 
+    messages: [
+      { role: "system", content: "You are a helpful assistant that answers using the provided context when relevant." },
+      { role: "user", content: `Question:\n${prompt}\n\nContext (page excerpt):\n${context}` }
+    ],
+    stream: false
+  };
+  const res = await fetch(`${apiBase}/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) throw new Error(`AI error ${res.status}`);
+  const data = await res.json();
+  // Expect { reply: "..." } from your backend
+  return data.reply ?? JSON.stringify(data);
+}
+
+sendBtn.addEventListener("click", async () => {
+  const prompt = ask.value.trim();
+  if (!prompt) return;
+  addMsg("you", prompt);
+  ask.value = "";
+
+  const settings = await loadSettings();
+  const pageText = (await getPageText()).slice(0, settings.contextChars);
+
+  try {
+    const reply = await callAI({
+      apiBase: settings.apiBase,
+      model: settings.model,
+      prompt,
+      context: pageText
+    });
+    addMsg("ai", reply);
+  } catch (e) {
+    addMsg("ai", `⚠️ ${e.message}. Check Settings → API Base.`);
+  }
+});

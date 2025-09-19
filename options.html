@@ -1,0 +1,43 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"/><title>AI Settings</title>
+<style>
+  body { font: 14px system-ui, sans-serif; padding: 16px; max-width: 700px; }
+  label { display:block; margin-top:12px; }
+  input { width:100%; padding:8px; }
+  button { margin-top:14px; padding:8px 12px; }
+  p.note { color:#555; }
+</style>
+</head>
+<body>
+  <h2>AI Browser Settings</h2>
+  <p class="note">Set your API Base to a backend you control (e.g., <code>https://your-worker.example.com</code>). Don’t put API keys in the extension.</p>
+  <label>API Base URL
+    <input id="apiBase" placeholder="https://your-backend/chat-proxy"/>
+  </label>
+  <label>Model (optional)
+    <input id="model" placeholder="gpt-4o-mini"/>
+  </label>
+  <label>Max context chars (page excerpt)
+    <input id="contextChars" type="number" value="20000"/>
+  </label>
+  <button id="save">Save</button>
+  <script>
+    const apiBase = document.getElementById("apiBase");
+    const model = document.getElementById("model");
+    const contextChars = document.getElementById("contextChars");
+    const save = document.getElementById("save");
+
+    chrome.storage.sync.get({ apiBase: "", model: "gpt-4o-mini", contextChars: 20000 }, (cfg) => {
+      apiBase.value = cfg.apiBase; model.value = cfg.model; contextChars.value = cfg.contextChars;
+    });
+
+    save.onclick = () => {
+      chrome.storage.sync.set({ apiBase: apiBase.value.trim(), model: model.value.trim(), contextChars: Number(contextChars.value) || 20000 }, () => {
+        save.textContent = "Saved!";
+        setTimeout(() => (save.textContent = "Save"), 1200);
+      });
+    };
+  </script>
+</body>
+</html>
